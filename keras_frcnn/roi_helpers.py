@@ -123,6 +123,12 @@ def apply_regr(x, y, w, h, tx, ty, tw, th):
 
 
 def apply_regr_np(X, T):
+    '''
+    X do the transformation by T
+    :param X: A[:,:,:,curr_layer]：shape[4,W,H] feature map中，当前anchor尺寸的所有 anchor中心点和长宽
+    :param T: regr: shape[4,W,H] feature map中，当前回归预测的，anchor相对于可以预测到物体的偏移量 tx ty tw th
+    :return:
+    '''
     try:
         x = X[0, :, :]
         y = X[1, :, :]
@@ -134,15 +140,15 @@ def apply_regr_np(X, T):
         tw = T[2, :, :]
         th = T[3, :, :]
 
-        cx = x + w / 2.
-        cy = y + h / 2.
-        cx1 = tx * w + cx
-        cy1 = ty * h + cy
+        cx = x + w / 2. # 计算中心点 cx
+        cy = y + h / 2. # 计算中心点 cy
+        cx1 = tx * w + cx # 叠加偏移量，计算真正中心点 cx1
+        cy1 = ty * h + cy # 叠加偏移量，计算真正中心点 cy1
 
-        w1 = np.exp(tw.astype(np.float64)) * w
-        h1 = np.exp(th.astype(np.float64)) * h
-        x1 = cx1 - w1 / 2.
-        y1 = cy1 - h1 / 2.
+        w1 = np.exp(tw.astype(np.float64)) * w #叠加 anchor 偏移量，计算真正的宽
+        h1 = np.exp(th.astype(np.float64)) * h #叠加 anchor 偏移量，计算真正的长
+        x1 = cx1 - w1 / 2. #通过长和宽以及中心点，计算出物体的左上角定点
+        y1 = cy1 - h1 / 2. #
 
         x1 = np.round(x1)
         y1 = np.round(y1)
@@ -167,8 +173,8 @@ def non_max_suppression_fast(boxes, overlap_thresh=0.9, max_boxes=300):
     x2 = boxes[:, 2]
     y2 = boxes[:, 3]
 
-    np.testing.assert_array_less(x1, x2)
-    np.testing.assert_array_less(y1, y2)
+    np.testing.assert_array_less(x1, x2) #又判断了遍 x1<x2
+    np.testing.assert_array_less(y1, y2) #又判断了遍 y1<y2
 
     if boxes.dtype.kind == "i":
         boxes = boxes.astype("float")
@@ -176,14 +182,16 @@ def non_max_suppression_fast(boxes, overlap_thresh=0.9, max_boxes=300):
     pick = []
     area = (x2 - x1) * (y2 - y1)
     # sorted by boxes last element which is prob
-    indexes = np.argsort([i[-1] for i in boxes])
+    indexes = np.argsort([i[-1] for i in boxes]) # 将所有bounding box的概率值从小到大排列后得到顺序index
 
     while len(indexes) > 0:
         last = len(indexes) - 1
-        i = indexes[last]
+        i = indexes[last] # 从最大的开始取
         pick.append(i)
 
         # find the intersection
+        # 极大值抑制 https://blog.csdn.net/shuzfan/article/details/52711706
+        # 将概率最大的bbox的x1,y1,x2,y2与所有其他概率值宇轩框的x1,y1,x2,y2进行比较，先找出大于x1,y1小于x2,y2的预选框
         xx1_int = np.maximum(x1[i], x1[indexes[:last]])
         yy1_int = np.maximum(y1[i], y1[indexes[:last]])
         xx2_int = np.minimum(x2[i], x2[indexes[:last]])
@@ -192,6 +200,7 @@ def non_max_suppression_fast(boxes, overlap_thresh=0.9, max_boxes=300):
         ww_int = np.maximum(0, xx2_int - xx1_int)
         hh_int = np.maximum(0, yy2_int - yy1_int)
 
+        # intersection 面积计算
         area_int = ww_int * hh_int
         # find the union
         area_union = area[i] + area[indexes[:last]] - area_int
@@ -261,22 +270,24 @@ def rpn_to_roi(rpn_layer, regr_layer, cfg, dim_ordering, use_regr=True, max_boxe
             A[3, :, :, curr_layer] = anchor_y
 
             if use_regr:
-                A[:, :, :, curr_layer] = apply_regr_np(A[:, :, :, curr_layer], regr)
+                # A[:,:,:,curr_layer]：shape[4,W,H] feature map中，当前anchor尺寸的所有 anchor中心点和长宽
+                # regr: shape[4,W,H] feature map中，当前回归预测的，anchor相对于可以预测到物体的偏移量 tx ty tw th
+                A[:, :, :, curr_layer] = apply_regr_np(A[:, :, :, curr_layer], regr) # 返回 [x1, y1, w1, h1]，左上角点以及物体长宽
 
-            A[2, :, :, curr_layer] = np.maximum(1, A[2, :, :, curr_layer])
-            A[3, :, :, curr_layer] = np.maximum(1, A[3, :, :, curr_layer])
-            A[2, :, :, curr_layer] += A[0, :, :, curr_layer]
-            A[3, :, :, curr_layer] += A[1, :, :, curr_layer]
+            A[2, :, :, curr_layer] = np.maximum(1, A[2, :, :, curr_layer]) #预测的bbox经过变换后的W 不能小于1
+            A[3, :, :, curr_layer] = np.maximum(1, A[3, :, :, curr_layer]) #预测的bbox经过变换后的H 不能小于1
+            A[2, :, :, curr_layer] += A[0, :, :, curr_layer] #预测的bbox的宽变为右下角的点的x2 = x1 + W
+            A[3, :, :, curr_layer] += A[1, :, :, curr_layer] #预测的bbox的长变为右下角的点的y2 = y1 + H
 
-            A[0, :, :, curr_layer] = np.maximum(0, A[0, :, :, curr_layer])
-            A[1, :, :, curr_layer] = np.maximum(0, A[1, :, :, curr_layer])
-            A[2, :, :, curr_layer] = np.minimum(cols - 1, A[2, :, :, curr_layer])
-            A[3, :, :, curr_layer] = np.minimum(rows - 1, A[3, :, :, curr_layer])
+            A[0, :, :, curr_layer] = np.maximum(0, A[0, :, :, curr_layer]) #预测的bbox经过变换后的x1 不能小于0
+            A[1, :, :, curr_layer] = np.maximum(0, A[1, :, :, curr_layer]) #预测的bbox经过变换后的y1 不能小于0
+            A[2, :, :, curr_layer] = np.minimum(cols - 1, A[2, :, :, curr_layer]) #预测的bbox经过变换后的x2 不能大于长（cols-1）
+            A[3, :, :, curr_layer] = np.minimum(rows - 1, A[3, :, :, curr_layer]) #预测的bbox经过变换后的y2 不能大于宽（rows-1）
 
-            curr_layer += 1
+            curr_layer += 1 # 下一个anchor
 
-    all_boxes = np.reshape(A.transpose((0, 3, 1, 2)), (4, -1)).transpose((1, 0))
-    all_probs = rpn_layer.transpose((0, 3, 1, 2)).reshape((-1))
+    all_boxes = np.reshape(A.transpose((0, 3, 1, 2)), (4, -1)).transpose((1, 0)) #所有 W*H*9 个bounding box 的 4个坐标值 [W*H*9,4]
+    all_probs = rpn_layer.transpose((0, 3, 1, 2)).reshape((-1))  #所有 W*H*9 个bounding box 的cls （前景还是后景） [W*H*9]
 
     x1 = all_boxes[:, 0]
     y1 = all_boxes[:, 1]
@@ -285,11 +296,11 @@ def rpn_to_roi(rpn_layer, regr_layer, cfg, dim_ordering, use_regr=True, max_boxe
 
     ids = np.where((x1 - x2 >= 0) | (y1 - y2 >= 0))
 
-    all_boxes = np.delete(all_boxes, ids, 0)
-    all_probs = np.delete(all_probs, ids, 0)
+    all_boxes = np.delete(all_boxes, ids, 0) # 删除 (x1,y1),(x2,y2)位置不正常的点
+    all_probs = np.delete(all_probs, ids, 0) # 删除 (x1,y1),(x2,y2)位置不正常的概率值
 
     # I guess boxes and prob are all 2d array, I will concat them
-    all_boxes = np.hstack((all_boxes, np.array([[p] for p in all_probs])))
+    all_boxes = np.hstack((all_boxes, np.array([[p] for p in all_probs]))) # [W*H*9,5] 5的顺序为 X1,Y1,X2,Y2,PROB
     result = non_max_suppression_fast(all_boxes, overlap_thresh=overlap_thresh, max_boxes=max_boxes)
     # omit the last column which is prob
     result = result[:, 0: -1]
