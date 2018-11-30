@@ -187,7 +187,7 @@ def non_max_suppression_fast(boxes, overlap_thresh=0.9, max_boxes=300):
     while len(indexes) > 0:
         last = len(indexes) - 1
         i = indexes[last] # 从最大的开始取
-        pick.append(i)
+        pick.append(i) # 记录最大的bbox的序号
 
         # find the intersection
         # 极大值抑制 https://blog.csdn.net/shuzfan/article/details/52711706
@@ -203,18 +203,18 @@ def non_max_suppression_fast(boxes, overlap_thresh=0.9, max_boxes=300):
         # intersection 面积计算
         area_int = ww_int * hh_int
         # find the union
-        area_union = area[i] + area[indexes[:last]] - area_int
+        area_union = area[i] + area[indexes[:last]] - area_int # 计算所有的bbox与最大的bbox之间的并集
 
         # compute the ratio of overlap
-        overlap = area_int / (area_union + 1e-6)
+        overlap = area_int / (area_union + 1e-6) # IOU
 
         # delete all indexes from the index list that have
-        indexes = np.delete(indexes, np.concatenate(([last], np.where(overlap > overlap_thresh)[0])))
+        indexes = np.delete(indexes, np.concatenate(([last], np.where(overlap > overlap_thresh)[0]))) # 将IOU 大于一定值的bbox与prob最大的bbox delete掉
 
-        if len(pick) >= max_boxes:
+        if len(pick) >= max_boxes: #当选取得bbox个数超过 300个时，退出
             break
     # return only the bounding boxes that were picked using the integer data type
-    boxes = boxes[pick]
+    boxes = boxes[pick] # 返回最大300个 （x1,x2,y1,y2,prob）
     return boxes
 
 
