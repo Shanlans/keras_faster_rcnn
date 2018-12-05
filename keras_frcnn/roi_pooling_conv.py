@@ -59,12 +59,12 @@ class RoiPoolingConv(Layer):
 
         for roi_idx in range(self.num_rois):
 
-            x = rois[0, roi_idx, 0]
+            x = rois[0, roi_idx, 0] # 对应回原图的 ROI 左上角点
             y = rois[0, roi_idx, 1]
-            w = rois[0, roi_idx, 2]
+            w = rois[0, roi_idx, 2] # 对应回原图的 ROI 长宽
             h = rois[0, roi_idx, 3]
             
-            row_length = w / float(self.pool_size)
+            row_length = w / float(self.pool_size) #缩小到feature map大小 ROI 有多宽多高
             col_length = h / float(self.pool_size)
 
             num_pool_regions = self.pool_size
@@ -102,7 +102,7 @@ class RoiPoolingConv(Layer):
                 w = K.cast(w, 'int32')
                 h = K.cast(h, 'int32')
 
-                rs = tf.image.resize_images(img[:, y:y+h, x:x+w, :], (self.pool_size, self.pool_size))
+                rs = tf.image.resize_images(img[:, y:y+h, x:x+w, :], (self.pool_size, self.pool_size)) # 从原图中直接截取ROI 然后resize 到 7*7
                 outputs.append(rs)
 
         final_output = K.concatenate(outputs, axis=0)
